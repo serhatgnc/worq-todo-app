@@ -1,0 +1,15 @@
+name: Docker Registry Management
+
+on:
+  schedule:
+    - cron: '0 2 * * 0'  # Weekly cleanup
+  workflow_dispatch:
+
+jobs:
+  cleanup-registry:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Clean old Docker images
+      run: |
+        echo "🧹 Cleaning up old Docker images..."
+        # Add cleanup logic for old images 

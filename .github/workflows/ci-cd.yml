@@ -1,0 +1,294 @@
+name: WORQ Todo CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME_FRONTEND: worq-todo-frontend
+  IMAGE_NAME_BACKEND: worq-todo-backend
+
+jobs:
+  # ===== FRONTEND PIPELINE =====
+  frontend-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./frontend
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Run linting
+      run: npm run lint
+
+    - name: Run unit tests
+      run: npm test -- --coverage --watchAll=false
+
+    - name: Run Pact consumer tests
+      run: npm test -- --testPathPattern=pact --watchAll=false
+
+    - name: Upload frontend coverage
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./frontend/coverage/lcov.info
+        flags: frontend
+
+    - name: Build frontend
+      run: npm run build
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: frontend-build
+        path: frontend/dist/
+
+  # ===== BACKEND PIPELINE =====
+  backend-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./backend
+
+    services:
+      mongodb:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.stats()'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.24.5'
+        cache-dependency-path: backend/go.sum
+
+    - name: Install dependencies
+      run: go mod download
+
+    - name: Run unit tests
+      run: go test -v -race -coverprofile=coverage.out ./...
+
+    - name: Run integration tests
+      run: go test -v -race -tags=integration ./...
+      env:
+        MONGO_URI: mongodb://localhost:27017
+
+    - name: Install Pact tools
+      run: |
+        curl -LO https://github.com/pact-foundation/pact-ruby-standalone/releases/download/v2.4.1/pact-2.4.1-linux-x86_64.tar.gz
+        tar xzf pact-2.4.1-linux-x86_64.tar.gz
+        sudo cp pact/bin/* /usr/local/bin/
+
+    - name: Run Pact provider tests
+      run: go test -v ./internal/server/pact_provider_test.go
+      env:
+        MONGO_URI: mongodb://localhost:27017
+
+    - name: Upload backend coverage
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./backend/coverage.out
+        flags: backend
+
+    - name: Build backend
+      run: go build -o main cmd/main.go
+
+    - name: Upload binary artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: backend-binary
+        path: backend/main
+
+  # ===== E2E TESTS =====
+  e2e-test:
+    runs-on: ubuntu-latest
+    needs: [frontend-test, backend-test]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
+    - name: Install Playwright
+      working-directory: ./frontend
+      run: |
+        npm ci
+        npx playwright install --with-deps
+
+    - name: Start services with Docker Compose
+      run: docker-compose up -d --build
+
+    - name: Wait for services
+      run: |
+        echo "Waiting for services to be ready..."
+        timeout 60 bash -c 'until curl -f http://localhost/api/health; do sleep 2; done'
+
+    - name: Run E2E tests
+      working-directory: ./frontend
+      run: npm run test:e2e
+
+    - name: Upload E2E test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: playwright-report
+        path: frontend/playwright-report/
+
+    - name: Stop services
+      if: always()
+      run: docker-compose down
+
+  # ===== DOCKER BUILD & PUSH =====
+  docker-build:
+    runs-on: ubuntu-latest
+    needs: [frontend-test, backend-test, e2e-test]
+    if: github.ref == 'refs/heads/main'
+    
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Log in to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata (tags, labels)
+      id: meta-frontend
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME_FRONTEND }}
+        tags: |
+          type=ref,event=branch
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: Extract metadata (tags, labels) - Backend
+      id: meta-backend
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME_BACKEND }}
+        tags: |
+          type=ref,event=branch
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: Build and push Frontend image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./frontend
+        push: true
+        tags: ${{ steps.meta-frontend.outputs.tags }}
+        labels: ${{ steps.meta-frontend.outputs.labels }}
+
+    - name: Build and push Backend image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./backend
+        push: true
+        tags: ${{ steps.meta-backend.outputs.tags }}
+        labels: ${{ steps.meta-backend.outputs.labels }}
+
+  # ===== DEPLOY TO TEST ENVIRONMENT =====
+  deploy-test:
+    runs-on: ubuntu-latest
+    needs: docker-build
+    if: github.ref == 'refs/heads/main'
+    environment: test
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure kubectl
+      uses: azure/setup-kubectl@v3
+
+    - name: Deploy to test environment
+      run: |
+        echo "🚀 Deploying to TEST environment..."
+        
+        # Update image tags in k8s manifests
+        sed -i "s|worq-todo-app-frontend:latest|${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME_FRONTEND }}:${{ github.sha }}|g" k8s/frontend/frontend-deployment.yaml
+        sed -i "s|worq-todo-app-backend:latest|${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME_BACKEND }}:${{ github.sha }}|g" k8s/backend/backend-deployment.yaml
+        
+        # Apply to test namespace
+        kubectl create namespace worq-todo-test --dry-run=client -o yaml | kubectl apply -f -
+        kubectl apply -f k8s/ --namespace=worq-todo-test
+        
+        # Wait for rollout
+        kubectl rollout status deployment/frontend --namespace=worq-todo-test --timeout=300s
+        kubectl rollout status deployment/backend --namespace=worq-todo-test --timeout=300s
+
+    - name: Run smoke tests
+      run: |
+        echo "🧪 Running smoke tests against TEST environment..."
+        # Add your smoke test commands here
+        kubectl get pods --namespace=worq-todo-test
+        
+  # ===== DEPLOY TO PRODUCTION =====
+  deploy-prod:
+    runs-on: ubuntu-latest
+    needs: deploy-test
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure kubectl
+      uses: azure/setup-kubectl@v3
+
+    - name: Deploy to production
+      run: |
+        echo "🚀 Deploying to PRODUCTION environment..."
+        
+        # Update image tags in k8s manifests
+        sed -i "s|worq-todo-app-frontend:latest|${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME_FRONTEND }}:${{ github.sha }}|g" k8s/frontend/frontend-deployment.yaml
+        sed -i "s|worq-todo-app-backend:latest|${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME_BACKEND }}:${{ github.sha }}|g" k8s/backend/backend-deployment.yaml
+        
+        # Apply to production namespace
+        kubectl create namespace worq-todo-prod --dry-run=client -o yaml | kubectl apply -f -
+        kubectl apply -f k8s/ --namespace=worq-todo-prod
+        
+        # Wait for rollout
+        kubectl rollout status deployment/frontend --namespace=worq-todo-prod --timeout=300s
+        kubectl rollout status deployment/backend --namespace=worq-todo-prod --timeout=300s
+
+    - name: Post-deployment verification
+      run: |
+        echo "✅ Production deployment complete!"
+        kubectl get pods --namespace=worq-todo-prod 
