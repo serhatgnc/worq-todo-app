@@ -22,6 +22,10 @@ module.exports = {
   settings: {
     react: {
       version: "detect",
+      runtime: "automatic",
     },
+  },
+  rules: {
+    "react/react-in-jsx-scope": "off",
   },
 };

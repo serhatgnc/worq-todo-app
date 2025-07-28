@@ -115,11 +115,25 @@ jobs:
         # Create symlinks in /tmp (fallback path)
         sudo ln -sf /opt/pact/lib/libpact_ffi.so /tmp/libpact_ffi.so
 
+    - name: Debug Pact FFI Library Installation
+      run: |
+        echo "=== Checking library locations ==="
+        ls -la /opt/pact/lib/ || echo "/opt/pact/lib/ not found"
+        ls -la /usr/local/lib/libpact_ffi.so || echo "/usr/local/lib/libpact_ffi.so not found"
+        ls -la /tmp/libpact_ffi.so || echo "/tmp/libpact_ffi.so not found"
+        
+        echo "=== Checking library with ldconfig ==="
+        sudo ldconfig -p | grep pact || echo "pact not found in ldconfig"
+        
+        echo "=== Checking library file properties ==="
+        file /opt/pact/lib/libpact_ffi.so || echo "file command failed"
+        ldd /opt/pact/lib/libpact_ffi.so || echo "ldd command failed"
+
     - name: Run Pact provider tests
       run: go test -v ./internal/server/pact_provider_test.go
       env:
         MONGO_URI: mongodb://localhost:27017
-        LD_LIBRARY_PATH: /usr/local/lib
+        LD_LIBRARY_PATH: /usr/local/lib:/opt/pact/lib:/tmp
 
     - name: Upload backend coverage
       uses: codecov/codecov-action@v3
