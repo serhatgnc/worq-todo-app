@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: backend-config
-  namespace: worq-todo
+  namespace: worq-todo-prod
 data:
   MONGO_URI: "mongodb://mongodb:27017"
   PORT: "8080"

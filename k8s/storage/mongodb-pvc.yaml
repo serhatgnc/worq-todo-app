@@ -2,7 +2,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: mongodb-pvc
-  namespace: worq-todo
+  namespace: worq-todo-prod
 spec:
   accessModes:
     - ReadWriteOnce

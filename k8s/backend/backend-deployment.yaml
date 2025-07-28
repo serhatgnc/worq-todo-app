@@ -2,11 +2,11 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: backend
-  namespace: worq-todo
+  namespace: worq-todo-prod
   labels:
     app: backend
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: backend
@@ -17,37 +17,14 @@ spec:
     spec:
       containers:
       - name: backend
-        image: worq-todo-app-backend:latest
-        imagePullPolicy: Never # For local images
+        image: gcr.io/worq-todo-app/worq-todo-backend:v1
+        imagePullPolicy: Always
         ports:
         - containerPort: 8080
-        env:
-        - name: MONGO_URI
-          valueFrom:
-            configMapKeyRef:
-              name: backend-config
-              key: MONGO_URI
-        - name: PORT
-          valueFrom:
-            configMapKeyRef:
-              name: backend-config
-              key: PORT
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 8080
-          initialDelaySeconds: 30
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 8080
-          initialDelaySeconds: 5
-          periodSeconds: 5
         resources:
           requests:
-            memory: "128Mi"
-            cpu: "100m"
+            memory: "32Mi"
+            cpu: "10m"
           limits:
-            memory: "256Mi"
-            cpu: "200m" 
+            memory: "64Mi"
+            cpu: "50m"
