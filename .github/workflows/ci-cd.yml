@@ -96,14 +96,13 @@ jobs:
       env:
         MONGO_URI: mongodb://localhost:27017
 
-    - name: Install Pact tools
+    - name: Install Pact FFI Library
       run: |
         curl -LO https://github.com/pact-foundation/pact-reference/releases/download/libpact_ffi-v0.4.9/libpact_ffi-linux-x86_64.tar.gz
         tar xzf libpact_ffi-linux-x86_64.tar.gz
         sudo mkdir -p /usr/local/lib
         sudo cp libpact_ffi-*/lib/libpact_ffi.so /usr/local/lib/
         sudo ldconfig
-        export LD_LIBRARY_PATH="/usr/local/lib:$LD_LIBRARY_PATH"
 
     - name: Run Pact provider tests
       run: go test -v ./internal/server/pact_provider_test.go
