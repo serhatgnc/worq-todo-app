@@ -88,14 +88,6 @@ jobs:
     - name: Install dependencies
       run: go mod download
 
-    - name: Run unit tests
-      run: go test -v -race -coverprofile=coverage.out ./...
-
-    - name: Run integration tests
-      run: go test -v -race -tags=integration ./...
-      env:
-        MONGO_URI: mongodb://localhost:27017
-
     - name: Install Pact FFI Library
       run: |
         sudo apt-get update
@@ -104,6 +96,14 @@ jobs:
         tar -xzf libpact_ffi-linux-x86_64.tar.gz
         sudo cp libpact_ffi.so /usr/lib/
         sudo ldconfig
+
+    - name: Run unit tests
+      run: go test -v -race -coverprofile=coverage.out ./...
+
+    - name: Run integration tests
+      run: go test -v -race -tags=integration ./...
+      env:
+        MONGO_URI: mongodb://localhost:27017
 
     - name: Run Pact provider tests
       run: go test -v ./internal/server/pact_provider_test.go

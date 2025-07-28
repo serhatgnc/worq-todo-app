@@ -1,7 +1,22 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { TodoApp } from "./TodoApp";
+import { todoService } from "../services/todoService";
+
+jest.mock("../services/todoService", () => ({
+  todoService: {
+    addTodo: jest.fn(),
+    getTodos: jest.fn(),
+  },
+}));
+
+const mockGetTodos = todoService.getTodos as jest.MockedFunction<
+  typeof todoService.getTodos
+>;
 
 describe("TodoApp Integration Tests", () => {
+  beforeEach(() => {
+    mockGetTodos.mockResolvedValue([]);
+  });
   test("should render TodoApp component", () => {
     render(<TodoApp />);
     const todoAppElement = screen.getByTestId("todo-app");
