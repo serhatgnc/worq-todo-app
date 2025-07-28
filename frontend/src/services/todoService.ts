@@ -12,7 +12,7 @@ export interface CreateTodoRequest {
 const api = axios.create({
   baseURL:
     process.env.NODE_ENV === "test"
-      ? "http://localhost:1234" // Pact mock server
+      ? "http://127.0.0.1:1234" // Pact mock server
       : "/api", // Real backend server
   headers: {
     "Content-Type": "application/json",

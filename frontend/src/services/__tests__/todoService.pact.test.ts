@@ -7,13 +7,14 @@ describe("TodoService Pact Tests", () => {
     consumer: "TodoFrontend",
     provider: "TodoAPI",
     port: 1234,
+    host: "127.0.0.1",
     logLevel: "info",
     dir: path.resolve(process.cwd(), "pacts"),
   });
 
   describe("addTodo", () => {
     test("should create todo successfully", async () => {
-      provider
+      await provider
         .given("server is healthy")
         .uponReceiving("a request to create todo")
         .withRequest({
@@ -32,17 +33,16 @@ describe("TodoService Pact Tests", () => {
             "Content-Type": "application/json",
           },
           body: {
-            id: MatchersV3.uuid("550e8400-e29b-41d4-a716-446655440000"),
+            id: String(MatchersV3.uuid()),
             text: "Buy some milk",
           },
+        })
+        .executeTest(async () => {
+          const todo = await todoService.addTodo("Buy some milk");
+
+          expect(todo.id).toBeDefined();
+          expect(todo.text).toBe("Buy some milk");
         });
-
-      return provider.executeTest(async () => {
-        const todo = await todoService.addTodo("Buy some milk");
-
-        expect(todo.id).toBeDefined();
-        expect(todo.text).toBe("Buy some milk");
-      });
     });
   });
 });
