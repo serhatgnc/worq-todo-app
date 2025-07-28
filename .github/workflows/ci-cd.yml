@@ -100,9 +100,20 @@ jobs:
       run: |
         curl -LO https://github.com/pact-foundation/pact-reference/releases/download/libpact_ffi-v0.4.9/libpact_ffi-linux-x86_64.tar.gz
         tar xzf libpact_ffi-linux-x86_64.tar.gz
+    
+        # Install to Go Pact's primary path
+        sudo mkdir -p /opt/pact/lib
+        sudo cp libpact_ffi-*/lib/libpact_ffi.so /opt/pact/lib/
+    
+        # Also install to system path as backup
         sudo mkdir -p /usr/local/lib
         sudo cp libpact_ffi-*/lib/libpact_ffi.so /usr/local/lib/
+    
+        # Update library cache
         sudo ldconfig
+    
+        # Create symlinks in /tmp (fallback path)
+        sudo ln -sf /opt/pact/lib/libpact_ffi.so /tmp/libpact_ffi.so
 
     - name: Run Pact provider tests
       run: go test -v ./internal/server/pact_provider_test.go
